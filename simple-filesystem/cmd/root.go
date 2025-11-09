@@ -1,5 +1,5 @@
 /*
-Copyright © 2025 NAME HERE <EMAIL ADDRESS>
+Copyright © 2025 NAME HERE <victor20030214@gmail.com>
 
 */
 
@@ -7,20 +7,93 @@ Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+var (
+	DiskFile                  = "disk/virtual_disk.img"
+	MagicNumber        uint32 = 0x5346594D // "MYFS"
+	BlockSize          uint32 = 1024
+	TotalBlocks        uint32 = 16
+	TotalInodes        uint32 = 13 // we could be storing 16 files, but since we decided to 1 block per file, we can have only 13inodes, so (3*64) bytes would be wasted
+	FreeInodes         uint32 = 13
+	FreeBlocks         uint32 = 13
+	InodeStart         uint32 = 1
+	BitmapStart        uint32 = 2
+	DataBlockStart     uint32 = 3
+	InitialBitmapBlock uint16 = uint16(0b0000000000000111) // writing the first byte in reverse, since we are using LittleEndian which writes the least significant bit first
+)
+
+func initDisk(disk *os.File) (ok bool, err error) {
+	zeroBlocks := make([]byte, 16*1024)
+	_, err = disk.WriteAt(zeroBlocks, 0)
+	if err != nil {
+		fmt.Errorf("error initializing the disk blocks %w", err)
+		return false, nil
+	}
+
+	fmt.Println("Initialize virtual disk")
+
+	buf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf, MagicNumber)
+	_, err = disk.WriteAt(buf, 0)
+	if err != nil {
+		return false, err
+	}
+
+	// block size
+	binary.LittleEndian.PutUint32(buf, BlockSize)
+	_, err = disk.WriteAt(buf, 4)
+	if err != nil {
+		return false, err
+	}
+
+	binary.LittleEndian.PutUint32(buf, TotalBlocks)
+	_, err = disk.WriteAt(buf, 8)
+	if err != nil {
+		return false, err
+	}
+
+	binary.LittleEndian.PutUint32(buf, TotalInodes)
+	if _, err = disk.WriteAt(buf, 12); err != nil {
+		return false, err
+	}
+
+	binary.LittleEndian.PutUint32(buf, FreeBlocks)
+	if _, err = disk.WriteAt(buf, 16); err != nil {
+		return false, err
+	}
+
+	binary.LittleEndian.PutUint32(buf, FreeInodes)
+	if _, err = disk.WriteAt(buf, 20); err != nil {
+		return false, err
+	}
+
+	fmt.Println("Superblock initialized and written to disk")
+
+	twoBytesBuf := make([]byte, 2)
+	binary.LittleEndian.PutUint16(twoBytesBuf, InitialBitmapBlock)
+
+	// offset is the start of 3rd block
+	if _, err = disk.WriteAt(twoBytesBuf, 3*1024); err != nil {
+		return false, err
+	}
+
+	fmt.Println("Bitmap Block Initialized and written to disk")
+
+	return true, nil
+}
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "simple-fs",
 	Short: "A simple filesytem with 16kb disk",
-	Long:  "simple-fs is a simple filesystem with 16kb disk, it has 16 blocks where each block is 1kb i.e 1024 bytes.\n\nIt only supports files and exposes the following api's - mkfs, rm, touch, ls, read, write",
-	// Run: func(cmd *cobra.Command, args []string) {
-	// 	fmt.Println("hello cobra")
-	// },
+	Long:  "simple-fs is a simple filesystem with 16kb disk, it has 16 blocks where each block is 1kb i.e 1024 bytes.\n\nIt only supports files and exposes the following api's - mkfs, refmt, stat, rm, touch, ls, read, write",
 }
 
 // when we run mkfs this should create a new disk wih 16kb under the disk folder
@@ -30,34 +103,39 @@ var rootCmd = &cobra.Command{
 var mkfsCmd = &cobra.Command{
 	Use:   "mkfs",
 	Short: "Initialize a 16kb virtual disk",
-	Long: `Initializes a 16kb virtual disk, with a superblock, inode table, data bitmap, data blocks. 
-	
-	Superblock ( 1kb ) 
-		magic number → identifies your FS type. ( 14 )
-		block size → 1024 B.
-		total blocks → 16.	
-		inode count → 32.
-		data block count → remaining blocks after superblock, inode table, bitmap.
-		free inode count → how many unused inodes.
-		free data block count → how many unused data blocks.
-		start block indexes for inode table, bitmap, data area.
+	Long: strings.TrimSpace(`
+		Initializes a 16KB virtual disk with a superblock, inode table, bitmap, and data blocks.
 
-  Inode table ( 1KB) ( 64 bytes per file - 16 files)
-	  filename - 55 characters max, string termination marker ( \0 ) ( 56 bytes )
-	  filesize - 4 bytes ( size of the file )
-		datablock - 4 bytes ( location of the data block where the file's data is stored )
+		Filesystem Layout
+		──────────────────
+		Superblock (1KB)
+			- Magic number: identifies your FS type (0x1400) (4 bytes)
+			- Block size: 1024 bytes (4 bytes)
+			- Total blocks: 16 (4 bytes)
+			- Inode count: 13 (4 bytes)
+			- Free inode count: dynamically updated (4 bytes)
+			- Data block count: remaining blocks after metadata (13)
+			- Free data block count: dynamically updated (4 bytes)
+			- Start block indexes for inode table, bitmap, data area
 
-	Free block bitmap ( 1KB )
-	  Bit 0 - superblock ( always 1 )
-	  Bit 1 - inode table ( always 1 )
-		Bit 2 - free block bitmap block ( always 1 )
-	  Bit 3-15 - ( use 0 for not used, 1 for used )
+		Inode Table (1KB)
+			- 64 bytes per file (16 files)
+			- filename: max 55 chars + null terminator (56 bytes)
+			- filesize: 4 bytes
+			- datablock: 4 bytes (location of data block)
 
-	Data block ( 3 - 15 ) ( 1KB each )
-		contains the data of the files
-	`,
+		Free Block Bitmap (1KB)
+			- Bit 0: superblock (always 1)
+			- Bit 1: inode table (always 1)
+			- Bit 2: bitmap (always 1)
+			- Bit 3–15: data blocks (0 = free, 1 = used)
+
+		Data Blocks (3–15)
+  		- 1KB each, used to store file data
+
+		`),
 	Run: func(cmd *cobra.Command, args []string) {
-		_, err := os.Stat("disk/virtual_disk.img")
+		_, err := os.Stat(DiskFile)
 		if err == nil {
 			err := fmt.Errorf("disk already exists. To reformat the disk use `simple-fs refmt`")
 			fmt.Println(err)
@@ -70,19 +148,54 @@ var mkfsCmd = &cobra.Command{
 			return
 		}
 
-		disk, err := os.Create("disk/virtual_disk.img")
+		disk, err := os.Create(DiskFile)
 		if err != nil {
 			fmt.Printf("Error creating the disk %v", err)
 			return
 		}
 		defer disk.Close()
 
-		fmt.Println("Created a new virutal disk")
+		_, err = initDisk(disk)
+		if err != nil {
+			fmt.Printf("Error writing superblock %v", err)
+			return
+		}
 
-		zeroBlocks := make([]byte, 16*1024)
-		fmt.Printf("zero blocks %v", zeroBlocks)
+		fmt.Println("Created a new virtual disk successfully")
+	},
+}
 
-		os.Remove("disk/virtual_disk.img")
+var refmtCmd = &cobra.Command{
+	Use:   "refmt",
+	Short: "reformats the disk",
+	Run: func(cmd *cobra.Command, args []string) {
+		_, err := os.Stat(DiskFile)
+		if err != nil {
+			fmt.Println("Virtual Disk doesn't exist, use `simple-fs mkfs` to initialize a disk")
+		}
+
+		err = os.Remove(DiskFile)
+		if err != nil {
+			fmt.Println("Error reformatting the disk")
+			return
+		}
+
+		disk, err := os.Create(DiskFile)
+		if err != nil {
+			fmt.Printf("Error creating the disk %v", err)
+			return
+		}
+		defer disk.Close()
+
+		fmt.Println("Erase all the data on virual disk")
+
+		_, err = initDisk(disk)
+		if err != nil {
+			fmt.Printf("Error writing superblock %v", err)
+			return
+		}
+
+		fmt.Println("Created a new virtual disk successfully")
 	},
 }
 
@@ -97,6 +210,7 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(mkfsCmd)
+	rootCmd.AddCommand(refmtCmd)
 
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
