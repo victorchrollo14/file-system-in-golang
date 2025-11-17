@@ -57,13 +57,13 @@ Info dump (bunch of stuff I understood)
 | Command           | Description                                                       |
 | ----------------- | ----------------------------------------------------------------- |
 | `simple-fs mkfs`  | Initializes a new 16KB virtual disk under `disk/virtual_disk.img` |
-| `simple-fs refmt` | (Planned) Reformat or reset the disk                              |
+| `simple-fs refmt` | Reformat or reset the disk                              |
+| `simple-fs stat`  | (Planned) Show file metadata                                      |
 | `simple-fs ls`    | (Planned) List files in the filesystem                            |
 | `simple-fs touch` | (Planned) Create an empty file                                    |
 | `simple-fs read`  | (Planned) Read file contents                                      |
 | `simple-fs write` | (Planned) Write data to a file                                    |
 | `simple-fs rm`    | (Planned) Delete a file                                           |
-| `simple-fs stat`  | (Planned) Show file metadata                                      |
 
 ---
 
@@ -77,7 +77,7 @@ go build -o simple-fs
 ./simple-fs mkfs
 
 # Inspect binary data (e.g. bitmap at block 3)
-xxd -s $((3*1024)) -l 16 disk/virtual_disk.img
+xxd -s $((2*1024)) -l 16 disk/virtual_disk.img
 ```
 
 ---
@@ -96,7 +96,8 @@ xxd -s $((3*1024)) -l 16 disk/virtual_disk.img
 ```
 simple-fs/
 ├── cmd/
-│   └── mkfs.go      # mkfs command & disk initialization logic
+│   └── root.go      # mkfs command & disk initialization logic
+│   └── stat.go      # stat sub command logic 
 ├── disk/
 │   └── virtual_disk.img  # created after running mkfs
 ├── go.mod
@@ -104,3 +105,29 @@ simple-fs/
 ```
 
 ---
+
+## outputs for each command
+
+- mkfs - initializes a new disk that's all, if disk already exists shows a log about the refmt command.
+- refmt - erases the data on the current disk, then  reinitializes a new one from scratch
+- stat - shows file data
+`
+simple-fs stat filename.txt
+       File: filename.txt
+       Size: 1024 bytes  
+       Data block: 5
+       Inode: 3
+`
+
+- ls - shows the list of all the files on disk, flags -l, -h ( long list format and human readable file size)
+`simple-fs ls
+ file.txt
+ go.mod
+`
+
+## Filesystem v2 scope
+
+- Directories - Tree structures, path parsing, directory entries
+- Variable file sizes - Block chains, indirect blocks, fragmentation handling  
+- Timestamps - Metadata management, inode structure expansion
+- Basic permissions - Access control, user/group concepts

@@ -109,7 +109,7 @@ var mkfsCmd = &cobra.Command{
 		Filesystem Layout
 		──────────────────
 		Superblock (1KB)
-			- Magic number: identifies your FS type (0x1400) (4 bytes)
+			- Magic number: identifies your FS type (MYFS in ascii) (4 bytes)
 			- Block size: 1024 bytes (4 bytes)
 			- Total blocks: 16 (4 bytes)
 			- Inode count: 13 (4 bytes)
