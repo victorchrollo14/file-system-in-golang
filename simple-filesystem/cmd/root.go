@@ -80,7 +80,7 @@ func initDisk(disk *os.File) (ok bool, err error) {
 	binary.LittleEndian.PutUint16(twoBytesBuf, InitialBitmapBlock)
 
 	// offset is the start of 3rd block
-	if _, err = disk.WriteAt(twoBytesBuf, 3*1024); err != nil {
+	if _, err = disk.WriteAt(twoBytesBuf, 2*1024); err != nil {
 		return false, err
 	}
 
