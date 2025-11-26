@@ -21,8 +21,11 @@ var touchCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		nameBytes := []byte(args[0])
 		if len(nameBytes) > 55 {
-			err := fmt.Errorf("filename cannot have more than 55 characters including the extension. Use a shorter name please")
-			return err
+			return fmt.Errorf("filename cannot have more than 55 characters including the extension. Use a shorter name please")
+		}
+
+		if len(nameBytes) == 0 {
+			return fmt.Errorf("enter a valid filename")
 		}
 
 		disk, err := os.OpenFile(DiskFile, os.O_RDWR, 0o644)
@@ -31,28 +34,24 @@ var touchCmd = &cobra.Command{
 		}
 		defer disk.Close()
 
-		superBlockBuf := make([]byte, BlockSize)
-		_, err = disk.ReadAt(superBlockBuf, 0)
+		superBlock, err := ReadBlock(disk, SuperIndex)
 		if err != nil {
 			return fmt.Errorf("error reading disk")
 		}
 
-		freeInodes := binary.LittleEndian.Uint32(superBlockBuf[16:20])
+		freeInodes := binary.LittleEndian.Uint32(superBlock[20:24])
 
 		if freeInodes == 0 {
 			return fmt.Errorf("the disk is full, simple-fs only supports a total 13 files")
 		}
-
 		fmt.Println("free inodes count", freeInodes)
 
-		inodeBlockBuf := make([]byte, 1024)
-		_, err = disk.ReadAt(inodeBlockBuf, 1024)
+		inodeBlock, err := ReadBlock(disk, InodeIndex)
 		if err != nil {
 			return fmt.Errorf("error reading disk")
 		}
 
-		bitMapBuf := make([]byte, BlockSize)
-		_, err = disk.ReadAt(bitMapBuf, 2048)
+		bitMapBlock, err := ReadBlock(disk, BitmapIndex)
 		if err != nil {
 			return fmt.Errorf("error reading disk")
 		}
@@ -60,42 +59,50 @@ var touchCmd = &cobra.Command{
 		fileNameBuf := make([]byte, 56)
 		copy(fileNameBuf, nameBytes)
 
-		binary.LittleEndian.PutUint32(superBlockBuf[16:20], uint32(freeInodes-1))
+		dataBlockIndex := -1
 
-		var dataBlockIndex int
-		for i := 0; i < 13; i++ {
-			entry := inodeBlockBuf[i*64]
+		for i := range make([]int, 12) {
+			entry := inodeBlock[i*64]
+
+			fmt.Printf("%08b\n", entry)
 
 			if entry == 0 {
-				fmt.Printf("writing at offest: %v", i)
+				fmt.Printf("writing at position: %v", i)
 				buf := make([]byte, 64)
 				copy(buf, fileNameBuf)
 
 				binary.LittleEndian.PutUint32(buf[56:60], 0)
 				binary.LittleEndian.PutUint32(buf[60:64], uint32(i+1))
 
-				copy(inodeBlockBuf[i*64:(i+1)*64], buf)
+				copy(inodeBlock[i*64:(i+1)*64], buf)
 				dataBlockIndex = i
 				break
 			}
 		}
 
-		bitMap := binary.LittleEndian.Uint16(bitMapBuf[:2])
+		if dataBlockIndex == -1 {
+			return fmt.Errorf("no free inodes found")
+		}
+
+		bitMap := binary.LittleEndian.Uint16(bitMapBlock[:2])
 		mask := uint16(1 << (dataBlockIndex + 3))
 		newBitmap := bitMap | mask
-		binary.LittleEndian.PutUint16(bitMapBuf[:2], newBitmap)
+		binary.LittleEndian.PutUint16(bitMapBlock[:2], newBitmap)
 
-		_, err = disk.WriteAt(inodeBlockBuf, 1024)
+		// decrementing freeInodes count
+		binary.LittleEndian.PutUint32(superBlock[20:24], uint32(freeInodes-1))
+
+		_, err = WriteBlock(disk, InodeIndex, inodeBlock)
 		if err != nil {
 			return fmt.Errorf("some error creating file, please try again")
 		}
 
-		_, err = disk.WriteAt(superBlockBuf, 0)
+		_, err = WriteBlock(disk, BitmapIndex, bitMapBlock)
 		if err != nil {
 			return fmt.Errorf("some error creating file, please try again")
 		}
 
-		_, err = disk.WriteAt(bitMapBuf, 2048)
+		_, err = WriteBlock(disk, SuperIndex, superBlock)
 		if err != nil {
 			return fmt.Errorf("some error creating file, please try again")
 		}

@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
+const (
 	DiskFile                  = "disk/virtual_disk.img"
 	MagicNumber        uint32 = 0x5346594D // "MYFS"
 	BlockSize          uint32 = 1024
@@ -27,6 +27,12 @@ var (
 	BitmapStart        uint32 = 2
 	DataBlockStart     uint32 = 3
 	InitialBitmapBlock uint16 = uint16(0b0000000000000111) // writing the first byte in reverse, since we are using LittleEndian which writes the least significant bit first
+)
+
+const (
+	SuperIndex  int64 = 0
+	InodeIndex  int64 = 1
+	BitmapIndex int64 = 2
 )
 
 func initDisk(disk *os.File) (ok bool, err error) {
