@@ -33,8 +33,7 @@ func initDisk(disk *os.File) (ok bool, err error) {
 	zeroBlocks := make([]byte, 16*1024)
 	_, err = disk.WriteAt(zeroBlocks, 0)
 	if err != nil {
-		fmt.Errorf("error initializing the disk blocks %w", err)
-		return false, nil
+		return false, err
 	}
 
 	fmt.Println("Initialize virtual disk")
@@ -137,8 +136,7 @@ var mkfsCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		_, err := os.Stat(DiskFile)
 		if err == nil {
-			err := fmt.Errorf("disk already exists. To reformat the disk use `simple-fs refmt`")
-			fmt.Println(err)
+			fmt.Println("disk already exists. To reformat the disk use `simple-fs refmt`")
 
 			return
 		}
@@ -153,11 +151,13 @@ var mkfsCmd = &cobra.Command{
 			fmt.Printf("Error creating the disk %v", err)
 			return
 		}
-		defer disk.Close()
+		defer func() {
+			_ = disk.Close()
+		}()
 
 		_, err = initDisk(disk)
 		if err != nil {
-			fmt.Printf("Error writing superblock %v", err)
+			fmt.Printf("error initializing disk: %v", err)
 			return
 		}
 
@@ -185,7 +185,9 @@ var refmtCmd = &cobra.Command{
 			fmt.Printf("Error creating the disk %v", err)
 			return
 		}
-		defer disk.Close()
+		defer func() {
+			_ = disk.Close()
+		}()
 
 		fmt.Println("Erase all the data on virual disk")
 
