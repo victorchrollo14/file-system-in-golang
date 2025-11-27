@@ -44,7 +44,6 @@ var touchCmd = &cobra.Command{
 		if freeInodes == 0 {
 			return fmt.Errorf("the disk is full, simple-fs only supports a total 13 files")
 		}
-		fmt.Println("free inodes count", freeInodes)
 
 		inodeBlock, err := ReadBlock(disk, InodeIndex)
 		if err != nil {
@@ -64,10 +63,7 @@ var touchCmd = &cobra.Command{
 		for i := range make([]int, 12) {
 			entry := inodeBlock[i*64]
 
-			fmt.Printf("%08b\n", entry)
-
 			if entry == 0 {
-				fmt.Printf("writing at position: %v", i)
 				buf := make([]byte, 64)
 				copy(buf, fileNameBuf)
 

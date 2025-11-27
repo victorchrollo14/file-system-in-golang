@@ -21,11 +21,8 @@ const (
 	BlockSize          uint32 = 1024
 	TotalBlocks        uint32 = 16
 	TotalInodes        uint32 = 13 // we could be storing 16 files, but since we decided to 1 block per file, we can have only 13inodes, so (3*64) bytes would be wasted
-	FreeInodes         uint32 = 13
 	FreeBlocks         uint32 = 13
-	InodeStart         uint32 = 1
-	BitmapStart        uint32 = 2
-	DataBlockStart     uint32 = 3
+	FreeInodes         uint32 = 13
 	InitialBitmapBlock uint16 = uint16(0b0000000000000111) // writing the first byte in reverse, since we are using LittleEndian which writes the least significant bit first
 )
 
@@ -44,48 +41,25 @@ func initDisk(disk *os.File) (ok bool, err error) {
 
 	fmt.Println("Initialize virtual disk")
 
-	buf := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buf, MagicNumber)
-	_, err = disk.WriteAt(buf, 0)
-	if err != nil {
-		return false, err
-	}
+	buf := make([]byte, 1024)
+	binary.LittleEndian.PutUint32(buf[0:4], MagicNumber)
+	binary.LittleEndian.PutUint32(buf[4:8], BlockSize)
+	binary.LittleEndian.PutUint32(buf[8:12], TotalBlocks)
+	binary.LittleEndian.PutUint32(buf[12:16], TotalInodes)
+	binary.LittleEndian.PutUint32(buf[16:20], FreeBlocks)
+	binary.LittleEndian.PutUint32(buf[20:24], FreeBlocks)
 
-	// block size
-	binary.LittleEndian.PutUint32(buf, BlockSize)
-	_, err = disk.WriteAt(buf, 4)
-	if err != nil {
-		return false, err
-	}
-
-	binary.LittleEndian.PutUint32(buf, TotalBlocks)
-	_, err = disk.WriteAt(buf, 8)
-	if err != nil {
-		return false, err
-	}
-
-	binary.LittleEndian.PutUint32(buf, TotalInodes)
-	if _, err = disk.WriteAt(buf, 12); err != nil {
-		return false, err
-	}
-
-	binary.LittleEndian.PutUint32(buf, FreeBlocks)
-	if _, err = disk.WriteAt(buf, 16); err != nil {
-		return false, err
-	}
-
-	binary.LittleEndian.PutUint32(buf, FreeInodes)
-	if _, err = disk.WriteAt(buf, 20); err != nil {
+	if _, err = disk.WriteAt(buf, 0); err != nil {
 		return false, err
 	}
 
 	fmt.Println("Superblock initialized and written to disk")
 
-	twoBytesBuf := make([]byte, 2)
-	binary.LittleEndian.PutUint16(twoBytesBuf, InitialBitmapBlock)
+	bitMapBuf := make([]byte, 1024)
+	binary.LittleEndian.PutUint16(bitMapBuf[:2], InitialBitmapBlock)
 
 	// offset is the start of 3rd block
-	if _, err = disk.WriteAt(twoBytesBuf, 2*1024); err != nil {
+	if _, err = disk.WriteAt(bitMapBuf, BitmapIndex*int64(BlockSize)); err != nil {
 		return false, err
 	}
 
