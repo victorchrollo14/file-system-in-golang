@@ -47,7 +47,7 @@ func initDisk(disk *os.File) (ok bool, err error) {
 	binary.LittleEndian.PutUint32(buf[8:12], TotalBlocks)
 	binary.LittleEndian.PutUint32(buf[12:16], TotalInodes)
 	binary.LittleEndian.PutUint32(buf[16:20], FreeBlocks)
-	binary.LittleEndian.PutUint32(buf[20:24], FreeBlocks)
+	binary.LittleEndian.PutUint32(buf[20:24], FreeInodes)
 
 	if _, err = disk.WriteAt(buf, 0); err != nil {
 		return false, err
