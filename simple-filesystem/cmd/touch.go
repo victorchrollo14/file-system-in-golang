@@ -5,6 +5,7 @@ Copyright © 2025 NAME HERE <victor20030214@gmail.com>
 package cmd
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -58,9 +59,22 @@ var touchCmd = &cobra.Command{
 		fileNameBuf := make([]byte, 56)
 		copy(fileNameBuf, nameBytes)
 
+		// check if the filename is already present, if yes then skip
+		for i := range make([]int, 13) {
+			from := i * 64
+			to := (i + 1) * 64
+			fileData := inodeBlock[from:to]
+
+			if bytes.Equal(fileData[:56], fileNameBuf) {
+				// fmt.Printf("the file %s already exists", string(fileNameBuf))
+				return nil
+			}
+
+		}
+
 		dataBlockIndex := -1
 
-		for i := range make([]int, 12) {
+		for i := range make([]int, 13) {
 			entry := inodeBlock[i*64]
 
 			if entry == 0 {
